@@ -14,12 +14,12 @@ class Conn:
         self.src_address = None
         self.dest_address = None
 
-        self.src_seq_number = random.randint(0, 2 ** 32 - 1)
+        self.seq_number = random.randint(0, 2 ** 32 - 1)
 
     def increase_seq_number(self):
-        self.src_seq_number += 1
-        self.src_seq_number %= 2 ** 32
-        return self.src_seq_number
+        self.seq_number += 1
+        self.seq_number %= 2 ** 32
+        return self.seq_number
 
 
 def listen(address: str) -> Conn:
@@ -56,7 +56,7 @@ def accept(conn: Conn) -> Conn:
     synack_packet.dest_port = handshake_conn.dest_address[1]
     synack_packet.syn = 1
     synack_packet.ack_number = (syn_packet.seq_number + 1) % 2 ** 32
-    synack_packet.seq_number = handshake_conn.src_seq_number
+    synack_packet.seq_number = handshake_conn.seq_number
     handshake_conn.increase_seq_number()
     handshake_conn.socket.sendto(synack_packet.encode(), handshake_conn.dest_address)
 
@@ -92,7 +92,7 @@ def dial(address) -> Conn:
 
     syn_packet.syn = 1
 
-    syn_packet.seq_number = conn.src_seq_number
+    syn_packet.seq_number = conn.seq_number
     ack_expected = conn.increase_seq_number()
 
     conn.socket.sendto(syn_packet.encode(), server_address)
