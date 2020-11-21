@@ -12,10 +12,9 @@ class Conn:
         self.socket = sock
 
         self.src_address = None
-        self.src_seq_number = random.randint(0, 2 ** 32 - 1)
-
         self.dest_address = None
-        self.dest_seq_number = None
+
+        self.src_seq_number = random.randint(0, 2 ** 32 - 1)
 
     def increase_seq_number(self):
         self.src_seq_number += 1
