@@ -160,6 +160,7 @@ def send(conn: Conn, data: bytes) -> int:
 
         if len(recv_task.received) > 0:
             packet = recv_task.received.popleft()  # type: TCPPacket
+            print("got ack", packet.ack_number)
 
             if packet.ack_number != window_start:  # and ack in window
                 window_start = packet.ack_number
@@ -206,7 +207,7 @@ def send(conn: Conn, data: bytes) -> int:
                 packet_to_send.fin = 1
                 packet_to_send.data = data[data_idx_manager.map(conn.seq_number) :]
 
-            print(packet_to_send.data, conn.seq_number)
+            print("sent", (packet_to_send.data, conn.seq_number))
             sent_amount = conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
             conn.seq_number = (conn.seq_number + sent_amount) % 2 ** 32
 
