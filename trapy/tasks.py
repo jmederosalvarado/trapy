@@ -16,9 +16,14 @@ class RecvTask:
         conn.socket.settimeout(0.1)
         while self.is_runing:
             try:
-                received, _ = conn.socket.recvfrom(65565)
+                received, address = conn.socket.recvfrom(65565)
                 packet = TCPPacket()
-                if packet.decode(received) and packet.dest_port == conn.src_address[1]:
+                if (
+                    packet.decode(received)
+                    and packet.dest_port == conn.src_address[1]
+                    and address[0] == conn.dest_address[0]
+                    and packet.src_port == conn.dest_address[1]
+                ):
                     self.received.append(packet)
 
             except socket.timeout:
