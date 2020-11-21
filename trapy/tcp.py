@@ -55,6 +55,7 @@ class TCPPacket(object):
         self.ack_number = None
         self.syn = None
         self.data = None
+        self.fin = None
 
     def encode(self):
         tcp_source = self.src_port or 0
@@ -62,7 +63,7 @@ class TCPPacket(object):
         tcp_seq = self.seq_number or 0
         tcp_ack_seq = self.ack_number or 0
         tcp_doff = 5  # 4 bit field, size of tcp header, 5 * 4 = 20 bytes
-        tcp_fin = 0
+        tcp_fin = self.fin or 0
         tcp_syn = self.syn or 0
         tcp_rst = 0
         tcp_psh = 0
@@ -141,6 +142,7 @@ class TCPPacket(object):
         self.seq_number = unpacked_tcp[2]
         self.ack_number = unpacked_tcp[3]
         self.syn = (unpacked_tcp[5] >> 1) & 0x01
+        self.fin = unpacked_tcp[5] & 0x01
         self.data = data
 
         return validate_checksum(unpacked_ip, unpacked_tcp, data)

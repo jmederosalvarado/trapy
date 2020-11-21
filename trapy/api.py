@@ -1,8 +1,11 @@
 import random
 import socket
+import time
+from threading import Thread
 import trapy.ports as port_manager
 from trapy.tcp import TCPPacket
-from trapy.utils import parse_address
+from trapy.utils import parse_address, DataIdxManager
+from trapy.tasks import RecvTask
 
 
 class Conn:
@@ -128,7 +131,84 @@ def dial(address) -> Conn:
 
 
 def send(conn: Conn, data: bytes) -> int:
-    pass
+    fragment_size = 2 ** 10
+    window_start = conn.seq_number
+    window_size = fragment_size * 20  # TODO: compute dynamic window size
+    duplicated_ack = 0
+
+    last_ack_time = None
+    waiting_for_ack_time = 0.25
+    times_waited_for_ack = 0
+
+    data_idx_manager = DataIdxManager()
+
+    recv_task = RecvTask()
+    recv_thread = Thread(target=recv_task.recv, args=[conn])
+    recv_thread.start()
+
+    while True:
+        if times_waited_for_ack > 5:
+            return data_idx_manager.map(conn.seq_number)
+
+        if last_ack_time is not None and (
+            time.time() - last_ack_time
+            > waiting_for_ack_time * 2 ** times_waited_for_ack
+        ):
+            times_waited_for_ack += 1
+            last_ack_time = time.time()
+            conn.seq_number = window_start
+
+        if len(recv_task.received) > 0:
+            packet = recv_task.received.popleft()  # type: TCPPacket
+
+            if packet.ack_number != window_start:  # and ack in window
+                window_start = packet.ack_number
+                duplicated_ack = 0
+
+                if (
+                    conn.seq_number != window_start
+                ):  # seq number is always inside window
+                    last_ack_time = time.time()
+                else:
+                    last_ack_time = None
+
+                if data_idx_manager.map(packet.ack_number) >= len(data):
+                    recv_task.stop()
+                    recv_thread.join()
+                    return len(data)
+
+            else:
+                duplicated_ack += 1
+                if duplicated_ack >= 3:
+                    recv_task.received.clear()
+                    conn.seq_number = packet.ack_number
+                    duplicated_ack = 0
+
+        if conn.seq_number < window_start + window_size and (
+            data_idx_manager.map(conn.seq_number) < len(data)
+        ):
+            if last_ack_time is None:
+                last_ack_time = time.time()
+
+            packet_to_send = TCPPacket()
+            packet_to_send.dest_port = conn.dest_address[1]
+            packet_to_send.src_port = conn.src_address[1]
+            packet_to_send.seq_number = conn.seq_number
+
+            if data_idx_manager.map(conn.seq_number) + fragment_size < len(data):
+                packet_to_send.data = data[
+                    data_idx_manager.map(conn.seq_number) : data_idx_manager.map(
+                        conn.seq_number + fragment_size
+                    )
+                ]
+
+            else:
+                packet_to_send.fin = 1
+                packet_to_send.data = data[data_idx_manager.map(conn.seq_number) :]
+
+            print(packet_to_send.data, conn.seq_number)
+            sent_amount = conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
+            conn.seq_number = (conn.seq_number + sent_amount) % 2 ** 32
 
 
 def recv(conn: Conn, length: int) -> bytes:
