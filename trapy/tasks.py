@@ -1,7 +1,6 @@
 import socket
 from queue import deque
 from trapy.tcp import TCPPacket
-from trapy.api import Conn
 
 
 class RecvTask:
@@ -12,7 +11,7 @@ class RecvTask:
     def stop(self):
         self.is_runing = False
 
-    def recv(self, conn: Conn):
+    def recv(self, conn):
         conn.socket.settimeout(0.1)
         while self.is_runing:
             try:
