@@ -15,6 +15,7 @@ class Conn:
         self.dest_address = None
 
         self.seq_number = random.randint(0, 2 ** 32 - 1)
+        self.ack_number = None
 
     def increase_seq_number(self):
         self.seq_number += 1
@@ -135,4 +136,6 @@ def recv(conn: Conn, length: int) -> bytes:
 
 
 def close(conn: Conn):
-    pass
+    port_manager.close(conn.dest_address[1])
+    conn.socket.close()
+    conn.socket = None
