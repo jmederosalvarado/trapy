@@ -4,7 +4,7 @@ import time
 from threading import Thread
 import trapy.ports as port_manager
 from trapy.tcp import TCPPacket
-from trapy.utils import parse_address, DataIdxManager
+from trapy.utils import parse_address, DataIdxMapper
 from trapy.tasks import RecvTask
 
 
@@ -143,7 +143,7 @@ def send(conn: Conn, data: bytes) -> int:
     waiting_for_ack_time = 0.25
     times_waited_for_ack = 0
 
-    data_idx_manager = DataIdxManager(conn.seq_number, len(data), fragment_size)
+    mapper = DataIdxMapper(conn.seq_number, len(data), window_size, fragment_size)
 
     recv_task = RecvTask()
     recv_thread = Thread(target=recv_task.recv, args=[conn])
@@ -151,9 +151,10 @@ def send(conn: Conn, data: bytes) -> int:
 
     while True:
         if times_waited_for_ack > 5:
+            print("max number of retries exceeded")
             recv_task.stop()
             recv_thread.join()
-            return data_idx_manager.map_idx(conn.seq_number)
+            return mapper.map_idx(window_start)
 
         if last_ack_time is not None and (
             time.time() - last_ack_time
@@ -165,20 +166,24 @@ def send(conn: Conn, data: bytes) -> int:
 
         if len(recv_task.received) > 0:
             packet = recv_task.received.popleft()  # type: TCPPacket
+
+            if packet.is_ack != 1:
+                print("got packet that is not ack")
+                continue
+
             print("got ack", packet.ack_number)
 
-            if packet.ack_number != window_start:  # and ack in window
+            if mapper.map_idx(packet.ack_number) > mapper.map_idx(window_start):
                 window_start = packet.ack_number
                 duplicated_ack = 0
 
-                if (
-                    conn.seq_number != window_start
-                ):  # seq number is always inside window
+                if mapper.map_idx(conn.seq_number) > mapper.map_idx(window_start):
                     last_ack_time = time.time()
                 else:
                     last_ack_time = None
 
-                if data_idx_manager.map_idx(packet.ack_number) >= len(data):
+                if mapper.map_idx(packet.ack_number) >= len(data):
+                    print("got all acks")
                     recv_task.stop()
                     recv_thread.join()
                     return len(data)
@@ -190,8 +195,8 @@ def send(conn: Conn, data: bytes) -> int:
                     conn.seq_number = packet.ack_number
                     duplicated_ack = 0
 
-        if conn.seq_number < window_start + window_size and (
-            data_idx_manager.map_idx(conn.seq_number) < len(data)
+        if mapper.map_idx(conn.seq_number) < len(data) and (
+            mapper.map_idx(conn.seq_number) < mapper.map_idx(window_start) + window_size
         ):
             if last_ack_time is None:
                 last_ack_time = time.time()
@@ -201,18 +206,18 @@ def send(conn: Conn, data: bytes) -> int:
             packet_to_send.src_port = conn.src_address[1]
             packet_to_send.seq_number = conn.seq_number
 
-            if data_idx_manager.map_idx(conn.seq_number) + fragment_size < len(data):
+            if mapper.map_idx(conn.seq_number) + fragment_size < len(data):
                 packet_to_send.data = data[
-                    data_idx_manager.map_idx(
-                        conn.seq_number
-                    ) : data_idx_manager.map_idx(conn.seq_number + fragment_size)
+                    mapper.map_idx(conn.seq_number) : mapper.map_idx(
+                        conn.seq_number + fragment_size
+                    )
                 ]
 
             else:
                 packet_to_send.fin = 1
-                packet_to_send.data = data[data_idx_manager.map_idx(conn.seq_number) :]
+                packet_to_send.data = data[mapper.map_idx(conn.seq_number) :]
 
-            print("sent", (packet_to_send.data, conn.seq_number))
+            print("sent seq", conn.seq_number)
             sent_amount = conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
             conn.seq_number = (conn.seq_number + sent_amount) % 2 ** 32
 

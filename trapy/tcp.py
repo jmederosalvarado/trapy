@@ -55,6 +55,7 @@ class TCPPacket(object):
         self.ack_number = None
         self.syn = None
         self.data = None
+        self.is_ack = None
         self.fin = None
 
     def encode(self):
@@ -67,7 +68,7 @@ class TCPPacket(object):
         tcp_syn = self.syn or 0
         tcp_rst = 0
         tcp_psh = 0
-        tcp_ack = 0
+        tcp_ack = self.is_ack or 0
         tcp_urg = 0
         tcp_window = socket.htons(5840)  # maximum allowed window size
         tcp_check = 0
@@ -142,6 +143,7 @@ class TCPPacket(object):
         self.seq_number = unpacked_tcp[2]
         self.ack_number = unpacked_tcp[3]
         self.syn = (unpacked_tcp[5] >> 1) & 0x01
+        self.is_ack = (unpacked_tcp[5] >> 4) & 0x01
         self.fin = unpacked_tcp[5] & 0x01
         self.data = data
 
