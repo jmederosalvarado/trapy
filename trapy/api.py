@@ -20,7 +20,7 @@ class Conn:
         self.seq_number = random.randint(0, 2 ** 32 - 1)
         self.expected_seq_number = None
 
-        self.socket.settimeout(1)
+        # self.socket.settimeout(1)
 
     def increase_seq_number(self):
         self.seq_number += 1

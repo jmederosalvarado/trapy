@@ -17,6 +17,7 @@ while True:
 
     received = recv(client_conn, 1024)
     if len(received) == 0 or received == b"close":
+        close(client_conn)
         break
 
     decoded = received.decode()

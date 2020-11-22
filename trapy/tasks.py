@@ -4,7 +4,8 @@ from trapy.tcp import TCPPacket
 
 
 class RecvTask:
-    def __init__(self):
+    def __init__(self, length=1024):
+        self.length = 1024
         self.is_runing = True
         self.received = deque()
 
@@ -12,10 +13,11 @@ class RecvTask:
         self.is_runing = False
 
     def recv(self, conn):
-        conn.socket.settimeout(0.1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+
         while self.is_runing:
             try:
-                received, address = conn.socket.recvfrom(65565)
+                received, address = sock.recvfrom(self.length)
                 packet = TCPPacket()
                 if (
                     packet.decode(received)
@@ -27,3 +29,5 @@ class RecvTask:
 
             except socket.timeout:
                 continue
+
+        sock.close()
