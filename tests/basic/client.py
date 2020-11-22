@@ -13,8 +13,11 @@ conn = dial("10.0.0.1:8080")
 sentence = input("enter sentence: ")
 print(f"sending sentence `{sentence}`")
 send(conn, sentence.encode())
+if sentence == "close":
+    close(conn)
+else:
+    print("waiting response")
+    response = recv(conn, 1024)
+    print(f"received `{response.decode()}`")
 
-response = recv(conn, 1024)
-print(f"received `{response.decode()}`")
-
-close(conn)
+    close(conn)

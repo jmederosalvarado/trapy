@@ -15,6 +15,7 @@ while True:
     client_conn = accept(conn)
     print("client accepted")
 
+    print("waiting sentence")
     received = recv(client_conn, 1024)
     if len(received) == 0 or received == b"close":
         close(client_conn)
