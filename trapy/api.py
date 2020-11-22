@@ -276,11 +276,11 @@ def recv(conn: Conn, length: int) -> bytes:
             conn.pending_received = received[length:]
             return received[:length]
 
-        # if times_waited_for_packet > 5:
-        #     print("max retries waiting for packet")
-        #     recv_task.stop()
-        #     recv_thread.join()
-        #     return received
+        if times_waited_for_packet > 5:
+            print("max retries waiting for packet")
+            recv_task.stop()
+            recv_thread.join()
+            return received
 
         ack_packet = TCPPacket()
         ack_packet.src_port = conn.src_address[1]
