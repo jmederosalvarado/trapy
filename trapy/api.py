@@ -180,11 +180,11 @@ def send(conn: Conn, data: bytes) -> int:
     recv_thread.start()
 
     while True:
-        # if times_waited_for_ack > 5:
-        #     print("max number of retries exceeded")
-        #     recv_task.stop()
-        #     recv_thread.join()
-        #     return mapper.map_idx(window_start)
+        if times_waited_for_ack > 5:
+            print("max number of retries exceeded")
+            recv_task.stop()
+            recv_thread.join()
+            return mapper.map_idx(window_start)
 
         if last_ack_time is not None and (
             time.time() - last_ack_time
