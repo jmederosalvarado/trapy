@@ -245,6 +245,15 @@ def recv(conn: Conn, length: int) -> bytes:
         ack_packet.src_port = conn.src_address[1]
         ack_packet.dest_port = conn.dest_address[1]
 
+        if last_packet_time is not None and (
+            time.time() - last_packet_time
+            > waiting_for_packet_time * 2 ** times_waited_for_packet
+        ):
+            last_packet_time = time.time()
+            times_waited_for_packet += 1
+            ack_packet.ack_number = conn.expected_seq_number
+            conn.socket.sendto(ack_packet.encode(), conn.dest_address)
+
         if len(recv_task.received) > 0:
             packet = recv_task.received.popleft()  # type: TCPPacket
             last_packet_time = time.time()
@@ -276,15 +285,6 @@ def recv(conn: Conn, length: int) -> bytes:
                     duplicated_ack_sent = 0
                 ack_packet.ack_number = conn.expected_seq_number
                 conn.socket.sendto(ack_packet.encode(), conn.dest_address)
-
-        if last_packet_time is not None and (
-            time.time() - last_packet_time
-            > waiting_for_packet_time * 2 ** times_waited_for_packet
-        ):
-            last_packet_time = time.time()
-            times_waited_for_packet += 1
-            ack_packet.ack_number = conn.expected_seq_number
-            conn.socket.sendto(ack_packet.encode(), conn.dest_address)
 
 
 def close(conn: Conn):
