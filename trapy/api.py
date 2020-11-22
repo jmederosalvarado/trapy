@@ -20,6 +20,8 @@ class Conn:
         self.seq_number = random.randint(0, 2 ** 32 - 1)
         self.expected_seq_number = None
 
+        self.pending_received = b""
+
         # self.socket.settimeout(1)
 
     def increase_seq_number(self):
@@ -137,6 +139,8 @@ def dial(address) -> Conn:
 
 
 def send(conn: Conn, data: bytes) -> int:
+    print("enter send")
+
     fragment_size = 2 ** 10
     window_start = conn.seq_number
     window_size = fragment_size * 20  # TODO: compute dynamic window size
@@ -153,11 +157,11 @@ def send(conn: Conn, data: bytes) -> int:
     recv_thread.start()
 
     while True:
-        if times_waited_for_ack > 5:
-            print("max number of retries exceeded")
-            recv_task.stop()
-            recv_thread.join()
-            return mapper.map_idx(window_start)
+        # if times_waited_for_ack > 5:
+        #     print("max number of retries exceeded")
+        #     recv_task.stop()
+        #     recv_thread.join()
+        #     return mapper.map_idx(window_start)
 
         if last_ack_time is not None and (
             time.time() - last_ack_time
@@ -226,24 +230,34 @@ def send(conn: Conn, data: bytes) -> int:
 
 
 def recv(conn: Conn, length: int) -> bytes:
-    received = b""
+    print("enter recv")
 
-    last_packet_time = time.time()
+    received = conn.pending_received
+    conn.pending_received = b""
+
+    last_packet_time = None
     waiting_for_packet_time = 0.25
     times_waited_for_packet = 0
 
-    recv_task = RecvTask()
+    recv_task = RecvTask(length)
     recv_thread = Thread(target=recv_task.recv, args=[conn])
     recv_thread.start()
 
     duplicated_ack_sent = 0
 
     while True:
-        if times_waited_for_packet > 5:
-            print("max retries waiting for packet")
-            recv_task.stop()
+        if len(received) >= length:
+            print(f"received {length} bytes")
+            recv_task.is_runing = False
             recv_thread.join()
-            return received
+            conn.pending_received = received[length:]
+            return received[:length]
+
+        # if times_waited_for_packet > 5:
+        #     print("max retries waiting for packet")
+        #     recv_task.stop()
+        #     recv_thread.join()
+        #     return received
 
         ack_packet = TCPPacket()
         ack_packet.src_port = conn.src_address[1]
@@ -286,6 +300,9 @@ def recv(conn: Conn, length: int) -> bytes:
                     print("received last packet")
                     recv_task.is_runing = False
                     recv_thread.join()
+                    if len(received) > length:
+                        conn.pending_received = received[length:]
+                        received = received[:length]
                     return received
 
             else:

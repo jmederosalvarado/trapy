@@ -14,10 +14,11 @@ class RecvTask:
 
     def recv(self, conn):
         sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        sock.settimeout(0.1)
 
         while self.is_runing:
             try:
-                received, address = sock.recvfrom(self.length)
+                received, address = sock.recvfrom(40 + self.length)
                 packet = TCPPacket()
                 if (
                     packet.decode(received)
