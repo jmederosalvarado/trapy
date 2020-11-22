@@ -3,10 +3,21 @@ import json
 from trapy.utils import ConnError
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
-ports_file = f"{current_dir}/files/ports.json"
+ports_dir = f"{current_dir}/files"
+ports_file = f"{ports_dir}/ports.json"
+
+
+def ensure_ports_file():
+    if not os.path.exists(ports_dir):
+        os.mkdir(ports_dir)
+    if not os.path.isfile(ports_file):
+        with open(ports_file, "w") as fp:
+            json.dump([], fp, ensure_ascii=False, indent=2)
 
 
 def get_port():
+    ensure_ports_file()
+
     with open(ports_file) as fp:
         busy_ports = json.load(fp)
 
@@ -22,6 +33,8 @@ def get_port():
 
 
 def bind(port):
+    ensure_ports_file()
+
     with open(ports_file) as fp:
         busy_ports = json.load(fp)
     if port in busy_ports:
@@ -32,6 +45,8 @@ def bind(port):
 
 
 def close(port):
+    ensure_ports_file()
+
     with open(ports_file) as fp:
         busy_ports = json.load(fp)
 
