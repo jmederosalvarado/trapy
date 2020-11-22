@@ -24,17 +24,58 @@ class Conn:
 
         # self.socket.settimeout(1)
 
-    def increase_seq_number(self):
-        self.seq_number += 1
-        self.seq_number %= 2 ** 32
-        return self.seq_number
-
 
 def listen(address: str) -> Conn:
     conn = Conn()
     conn.src_address = parse_address(address)
     port_manager.bind(conn.src_address[1])
     return conn
+
+
+def __handshake(conn, handshake_conn, syn_packet):
+
+    ## create synack
+
+    synack_packet = TCPPacket()
+    synack_packet.src_port = handshake_conn.src_address[1]
+    synack_packet.dest_port = handshake_conn.dest_address[1]
+    synack_packet.syn = 1
+    synack_packet.ack_number = (syn_packet.seq_number + 1) % 2 ** 32
+    synack_packet.is_ack = 1
+    synack_packet.seq_number = handshake_conn.seq_number
+
+    handshake_conn.seq_number = (handshake_conn.seq_number + 1) % 2 ** 32
+    handshake_conn.expected_seq_number = synack_packet.ack_number
+
+    ## send synack and wait last segment
+
+    last_packet = TCPPacket()
+    times_waited_last_segment = 0
+
+    while True:
+        handshake_conn.socket.sendto(
+            synack_packet.encode(), handshake_conn.dest_address
+        )
+        print("synack sent")
+
+        handshake_conn.socket.settimeout(0.25 * 2 ** times_waited_last_segment)
+        try:
+            received, address = handshake_conn.socket.recvfrom(1024)
+            if (
+                last_packet.decode(received)
+                and last_packet.dest_port == handshake_conn.src_address[1]
+                and last_packet.syn == 0
+            ):
+                handshake_conn.socket.settimeout(None)
+                print("last segment received")
+                return True
+
+        except socket.timeout:
+            times_waited_last_segment += 1
+            if times_waited_last_segment >= 5:
+                handshake_conn.socket.settimeout(None)
+                print("timeout ignoring syn client")
+                return False
 
 
 def accept(conn: Conn) -> Conn:
@@ -46,44 +87,19 @@ def accept(conn: Conn) -> Conn:
     while True:
         received, address = conn.socket.recvfrom(1024)
         if (
-            syn_packet.decode(received)
-            and syn_packet.dest_port == conn.src_address[1]
-            and syn_packet.syn == 1
+            not syn_packet.decode(received)
+            or syn_packet.dest_port != conn.src_address[1]
+            or syn_packet.syn != 1
         ):
-            print("syn received")
+            continue
+
+        print("syn received")
+
+        handshake_conn.src_address = conn.src_address[0], port_manager.get_port()
+        handshake_conn.dest_address = address[0], syn_packet.src_port
+        if __handshake(conn, handshake_conn, syn_packet):
             break
 
-    handshake_conn.src_address = conn.src_address[0], port_manager.get_port()
-    handshake_conn.dest_address = address[0], syn_packet.src_port
-
-    ## send synack
-
-    synack_packet = TCPPacket()
-    synack_packet.src_port = handshake_conn.src_address[1]
-    synack_packet.dest_port = handshake_conn.dest_address[1]
-    synack_packet.syn = 1
-    synack_packet.ack_number = (syn_packet.seq_number + 1) % 2 ** 32
-    syn_packet.is_ack = 1
-    synack_packet.seq_number = handshake_conn.seq_number
-    handshake_conn.increase_seq_number()
-    handshake_conn.socket.sendto(synack_packet.encode(), handshake_conn.dest_address)
-    handshake_conn.expected_seq_number = synack_packet.ack_number
-
-    print("synack sent")
-
-    ## receive last segment
-
-    last_packet = TCPPacket()
-    while True:
-        received, address = handshake_conn.socket.recvfrom(1024)
-        if (
-            last_packet.decode(received)
-            and last_packet.dest_port == handshake_conn.src_address[1]
-            and last_packet.syn == 0
-        ):
-            break
-
-    print("last segment received")
     print("connection accepted")
     return handshake_conn
 
@@ -93,34 +109,41 @@ def dial(address) -> Conn:
     conn.src_address = parse_address(f":{port_manager.get_port()}")
     server_address = parse_address(address)
 
-    ## create and send syn packet
+    ## create syn packet
 
     syn_packet = TCPPacket()
     syn_packet.src_port = conn.src_address[1]
     syn_packet.dest_port = server_address[1]
-
     syn_packet.syn = 1
-
     syn_packet.seq_number = conn.seq_number
-    ack_expected = conn.increase_seq_number()
 
-    conn.socket.sendto(syn_packet.encode(), server_address)
+    conn.seq_number = (conn.seq_number + 1) % 2 ** 32
+    ack_expected = conn.seq_number
 
-    print("syn sent")
-
-    ## receive synack packet
+    ## send syn packet and wait synack
 
     synack_packet = TCPPacket()
+    times_waited_synack = 0
+
     while True:
-        packet, address = conn.socket.recvfrom(1024)
-        if (
-            synack_packet.decode(packet)
-            and synack_packet.syn == 1
-            and synack_packet.dest_port == conn.src_address[1]
-            and address[0] == server_address[0]
-            and ack_expected == synack_packet.ack_number
-        ):
-            break
+        conn.socket.sendto(syn_packet.encode(), server_address)
+        print("syn sent")
+
+        conn.socket.settimeout(0.25 * 2 ** times_waited_synack)
+        try:
+            packet, address = conn.socket.recvfrom(1024)
+            if (
+                synack_packet.decode(packet)
+                and synack_packet.syn == 1
+                and synack_packet.dest_port == conn.src_address[1]
+                and address[0] == server_address[0]
+                and ack_expected == synack_packet.ack_number
+            ):
+                break
+        except socket.timeout:
+            times_waited_synack += 1
+
+    conn.socket.settimeout(None)
     conn.dest_address = server_address[0], synack_packet.src_port
     conn.expected_seq_number = (synack_packet.seq_number + 1) % 2 ** 32
     print("synack received")
