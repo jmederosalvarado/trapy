@@ -203,6 +203,12 @@ def send(conn: Conn, data: bytes) -> int:
 
             print("got ack", packet.ack_number)
 
+            if mapper.map_idx(packet.ack_number) >= len(data):
+                print("got all acks")
+                recv_task.stop()
+                recv_thread.join()
+                return len(data)
+
             if mapper.map_idx(packet.ack_number) > mapper.map_idx(window_start):
                 window_start = packet.ack_number
                 duplicated_ack = 0
@@ -212,12 +218,6 @@ def send(conn: Conn, data: bytes) -> int:
                 else:
                     last_ack_time = None
 
-                if mapper.map_idx(packet.ack_number) >= len(data):
-                    print("got all acks")
-                    recv_task.stop()
-                    recv_thread.join()
-                    return len(data)
-
             else:
                 duplicated_ack += 1
                 if duplicated_ack >= 3:
@@ -225,7 +225,7 @@ def send(conn: Conn, data: bytes) -> int:
                     conn.seq_number = packet.ack_number
                     duplicated_ack = 0
 
-        if mapper.map_idx(conn.seq_number) < len(data) and (
+        if mapper.map_idx(conn.seq_number) <= len(data) and (
             mapper.map_idx(conn.seq_number) < mapper.map_idx(window_start) + window_size
         ):
             if last_ack_time is None:
