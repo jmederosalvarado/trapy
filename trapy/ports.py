@@ -27,6 +27,9 @@ def bind(port):
     if port in busy_ports:
         raise ConnError(f"port {port} is busy")
 
+    with open(ports_file, "w") as fp:
+        json.dump(busy_ports + [port], fp=fp, ensure_ascii=False, indent=2)
+
 
 def close(port):
     with open(ports_file) as fp:

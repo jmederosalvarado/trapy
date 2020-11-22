@@ -30,7 +30,7 @@ class DataIdxManager(object):
             self.map[i] = self.n
             self.n += 1
 
-    def map(self, seq):
+    def map_idx(self, seq):
         if seq == self.last:
             for _ in range(self.step):
                 self.map[self.first] = self.n

@@ -41,7 +41,6 @@ def accept(conn: Conn) -> Conn:
     syn_packet = TCPPacket()
     while True:
         received, address = conn.socket.recvfrom(1024)
-        print("received something")
         if (
             syn_packet.decode(received)
             and syn_packet.dest_port == conn.src_address[1]
@@ -63,6 +62,7 @@ def accept(conn: Conn) -> Conn:
     synack_packet.seq_number = handshake_conn.seq_number
     handshake_conn.increase_seq_number()
     handshake_conn.socket.sendto(synack_packet.encode(), handshake_conn.dest_address)
+    handshake_conn.expected_seq_number = synack_packet.ack_number
 
     print("synack sent")
 
@@ -117,6 +117,7 @@ def dial(address) -> Conn:
         ):
             break
     conn.dest_address = server_address[0], synack_packet.src_port
+    conn.expected_seq_number = (synack_packet.seq_number + 1) % 2 ** 32
     print("synack received")
 
     ## send last special segment
@@ -129,6 +130,8 @@ def dial(address) -> Conn:
     conn.socket.sendto(last_packet.encode(), conn.dest_address)
     print("last segment sent")
 
+    return conn
+
 
 def send(conn: Conn, data: bytes) -> int:
     fragment_size = 2 ** 10
@@ -140,7 +143,7 @@ def send(conn: Conn, data: bytes) -> int:
     waiting_for_ack_time = 0.25
     times_waited_for_ack = 0
 
-    data_idx_manager = DataIdxManager()
+    data_idx_manager = DataIdxManager(conn.seq_number, len(data), fragment_size)
 
     recv_task = RecvTask()
     recv_thread = Thread(target=recv_task.recv, args=[conn])
@@ -150,7 +153,7 @@ def send(conn: Conn, data: bytes) -> int:
         if times_waited_for_ack > 5:
             recv_task.stop()
             recv_thread.join()
-            return data_idx_manager.map(conn.seq_number)
+            return data_idx_manager.map_idx(conn.seq_number)
 
         if last_ack_time is not None and (
             time.time() - last_ack_time
@@ -175,7 +178,7 @@ def send(conn: Conn, data: bytes) -> int:
                 else:
                     last_ack_time = None
 
-                if data_idx_manager.map(packet.ack_number) >= len(data):
+                if data_idx_manager.map_idx(packet.ack_number) >= len(data):
                     recv_task.stop()
                     recv_thread.join()
                     return len(data)
@@ -188,7 +191,7 @@ def send(conn: Conn, data: bytes) -> int:
                     duplicated_ack = 0
 
         if conn.seq_number < window_start + window_size and (
-            data_idx_manager.map(conn.seq_number) < len(data)
+            data_idx_manager.map_idx(conn.seq_number) < len(data)
         ):
             if last_ack_time is None:
                 last_ack_time = time.time()
@@ -198,16 +201,16 @@ def send(conn: Conn, data: bytes) -> int:
             packet_to_send.src_port = conn.src_address[1]
             packet_to_send.seq_number = conn.seq_number
 
-            if data_idx_manager.map(conn.seq_number) + fragment_size < len(data):
+            if data_idx_manager.map_idx(conn.seq_number) + fragment_size < len(data):
                 packet_to_send.data = data[
-                    data_idx_manager.map(conn.seq_number) : data_idx_manager.map(
-                        conn.seq_number + fragment_size
-                    )
+                    data_idx_manager.map_idx(
+                        conn.seq_number
+                    ) : data_idx_manager.map_idx(conn.seq_number + fragment_size)
                 ]
 
             else:
                 packet_to_send.fin = 1
-                packet_to_send.data = data[data_idx_manager.map(conn.seq_number) :]
+                packet_to_send.data = data[data_idx_manager.map_idx(conn.seq_number) :]
 
             print("sent", (packet_to_send.data, conn.seq_number))
             sent_amount = conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
@@ -241,10 +244,6 @@ def recv(conn: Conn, length: int) -> bytes:
             packet = recv_task.received.popleft()  # type: TCPPacket
             last_packet_time = time.time()
 
-            ## parche para ignorar ultimo segmento de accept
-            # if len(data) == 0:
-            #     continue
-
             print("received", (packet.data, packet.seq_number))
 
             if packet.seq_number == conn.expected_seq_number:
@@ -271,7 +270,7 @@ def recv(conn: Conn, length: int) -> bytes:
                     recv_task.received.clear()
                     duplicated_ack_sent = 0
                 ack_packet.ack_number = conn.expected_seq_number
-                conn.socket.sendto(ack_packet, conn.dest_address)
+                conn.socket.sendto(ack_packet.encode(), conn.dest_address)
 
         if last_packet_time is not None and (
             time.time() - last_packet_time
@@ -280,10 +279,10 @@ def recv(conn: Conn, length: int) -> bytes:
             last_packet_time = time.time()
             times_waited_for_packet += 1
             ack_packet.ack_number = conn.expected_seq_number
-            conn.socket.sendto(ack_packet, conn.dest_address)
+            conn.socket.sendto(ack_packet.encode(), conn.dest_address)
 
 
 def close(conn: Conn):
-    port_manager.close(conn.dest_address[1])
+    port_manager.close(conn.src_address[1])
     conn.socket.close()
     conn.socket = None
