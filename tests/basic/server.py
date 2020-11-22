@@ -16,7 +16,7 @@ while True:
     print("client accepted")
 
     print("waiting sentence")
-    received = recv(client_conn, 1024)
+    received = recv(client_conn, 60000)
     if len(received) == 0 or received == b"close":
         close(client_conn)
         break
