@@ -220,7 +220,7 @@ def send(conn: Conn, data: bytes) -> int:
 def recv(conn: Conn, length: int) -> bytes:
     received = b""
 
-    last_packet_time = None
+    last_packet_time = time.time()
     waiting_for_packet_time = 0.25
     times_waited_for_packet = 0
 
