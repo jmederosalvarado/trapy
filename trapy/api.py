@@ -20,6 +20,8 @@ class Conn:
         self.seq_number = random.randint(0, 2 ** 32 - 1)
         self.expected_seq_number = None
 
+        self.socket.settimeout(1)
+
     def increase_seq_number(self):
         self.seq_number += 1
         self.seq_number %= 2 ** 32
@@ -59,6 +61,7 @@ def accept(conn: Conn) -> Conn:
     synack_packet.dest_port = handshake_conn.dest_address[1]
     synack_packet.syn = 1
     synack_packet.ack_number = (syn_packet.seq_number + 1) % 2 ** 32
+    syn_packet.is_ack = 1
     synack_packet.seq_number = handshake_conn.seq_number
     handshake_conn.increase_seq_number()
     handshake_conn.socket.sendto(synack_packet.encode(), handshake_conn.dest_address)
@@ -237,6 +240,7 @@ def recv(conn: Conn, length: int) -> bytes:
 
     while True:
         if times_waited_for_packet > 5:
+            print("max retries waiting for packet")
             recv_task.stop()
             recv_thread.join()
             return received
@@ -244,35 +248,42 @@ def recv(conn: Conn, length: int) -> bytes:
         ack_packet = TCPPacket()
         ack_packet.src_port = conn.src_address[1]
         ack_packet.dest_port = conn.dest_address[1]
+        ack_packet.is_ack = 1
 
         if last_packet_time is not None and (
             time.time() - last_packet_time
             > waiting_for_packet_time * 2 ** times_waited_for_packet
         ):
+            print("timeout waiting for packet")
             last_packet_time = time.time()
             times_waited_for_packet += 1
             ack_packet.ack_number = conn.expected_seq_number
+            print("resent ack", ack_packet.ack_number)
             conn.socket.sendto(ack_packet.encode(), conn.dest_address)
 
         if len(recv_task.received) > 0:
             packet = recv_task.received.popleft()  # type: TCPPacket
             last_packet_time = time.time()
 
-            print("received", (packet.data, packet.seq_number))
+            if packet.is_ack:
+                continue
+
+            print("got seq", packet.seq_number)
 
             if packet.seq_number == conn.expected_seq_number:
                 received += packet.data
                 times_waited_for_packet = 0
+                duplicated_ack_sent = 0
                 conn.expected_seq_number = (
                     packet.seq_number + len(packet.data)
                 ) % 2 ** 32
-                ack = conn.expected_seq_number
 
-                ack_packet.ack_number = ack
+                ack_packet.ack_number = conn.expected_seq_number
 
+                print("sent ack", ack_packet.ack_number)
                 conn.socket.sendto(ack_packet.encode(), conn.dest_address)
-                print("sent ack", ack)
                 if packet.fin == 1:
+                    print("received last packet")
                     recv_task.is_runing = False
                     recv_thread.join()
                     return received
@@ -284,6 +295,7 @@ def recv(conn: Conn, length: int) -> bytes:
                     recv_task.received.clear()
                     duplicated_ack_sent = 0
                 ack_packet.ack_number = conn.expected_seq_number
+                print("resent ack", ack_packet.ack_number)
                 conn.socket.sendto(ack_packet.encode(), conn.dest_address)
 
 
