@@ -103,7 +103,7 @@ class TCPPacket(object):
         protocol = socket.IPPROTO_TCP
 
         if self.data is not None:
-            tcp_length = 20 + len(str(self.data))
+            tcp_length = 20 + len(self.data)
         else:
             tcp_length = 20
 
@@ -111,7 +111,7 @@ class TCPPacket(object):
 
         pseudo_header = pseudo_header + tcp_header
         if self.data is not None:
-            pseudo_header = pseudo_header + bytes(self.data)
+            pseudo_header = pseudo_header + self.data
 
         tcp_check = build_checksum(pseudo_header)
 
@@ -147,5 +147,4 @@ class TCPPacket(object):
         self.fin = unpacked_tcp[5] & 0x01
         self.data = data
 
-        # return validate_checksum(unpacked_ip, unpacked_tcp, data)
-        return True
+        return validate_checksum(unpacked_ip, unpacked_tcp, data)
