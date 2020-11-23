@@ -26,6 +26,8 @@ class Conn:
 
 
 def listen(address: str) -> Conn:
+    print("enter listen")
+
     conn = Conn()
     conn.src_address = parse_address(address)
     port_manager.bind(conn.src_address[1])
@@ -79,6 +81,8 @@ def __handshake(conn, handshake_conn, syn_packet):
 
 
 def accept(conn: Conn) -> Conn:
+    print("enter accept")
+
     handshake_conn = Conn()
 
     ## wait for syn request
@@ -105,6 +109,8 @@ def accept(conn: Conn) -> Conn:
 
 
 def dial(address) -> Conn:
+    print("enter dial")
+
     conn = Conn()
     conn.src_address = parse_address(f":{port_manager.get_port()}")
     server_address = parse_address(address)
@@ -184,6 +190,7 @@ def send(conn: Conn, data: bytes) -> int:
             print("max number of retries exceeded")
             recv_task.stop()
             recv_thread.join()
+            print(f"sent {mapper.map_idx(window_start)} bytes")
             return mapper.map_idx(window_start)
 
         if last_ack_time is not None and (
@@ -207,6 +214,7 @@ def send(conn: Conn, data: bytes) -> int:
                 print("got all acks")
                 recv_task.stop()
                 recv_thread.join()
+                print(f"sent {len(data)} bytes")
                 return len(data)
 
             if mapper.map_idx(packet.ack_number) > mapper.map_idx(window_start):
@@ -225,8 +233,13 @@ def send(conn: Conn, data: bytes) -> int:
                     conn.seq_number = packet.ack_number
                     duplicated_ack = 0
 
-        if mapper.map_idx(conn.seq_number) <= len(data) and (
-            mapper.map_idx(conn.seq_number) < mapper.map_idx(window_start) + window_size
+        if (
+            len(data) == 0
+            or mapper.map_idx(conn.seq_number) < len(data)
+            and (
+                mapper.map_idx(conn.seq_number)
+                < mapper.map_idx(window_start) + window_size
+            )
         ):
             if last_ack_time is None:
                 last_ack_time = time.time()
@@ -248,8 +261,9 @@ def send(conn: Conn, data: bytes) -> int:
                 packet_to_send.data = data[mapper.map_idx(conn.seq_number) :]
 
             print("sent seq", conn.seq_number)
-            sent_amount = conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
-            conn.seq_number = (conn.seq_number + sent_amount) % 2 ** 32
+            conn.socket.sendto(packet_to_send.encode(), conn.dest_address)
+            conn.seq_number = (conn.seq_number + len(packet_to_send.data)) % 2 ** 32
+            print("increase seq to", conn.seq_number)
 
 
 def recv(conn: Conn, length: int) -> bytes:
@@ -258,7 +272,7 @@ def recv(conn: Conn, length: int) -> bytes:
     received = conn.pending_received
     conn.pending_received = b""
 
-    last_packet_time = None
+    last_packet_time = time.time()
     waiting_for_packet_time = 0.25
     times_waited_for_packet = 0
 
@@ -340,6 +354,8 @@ def recv(conn: Conn, length: int) -> bytes:
 
 
 def close(conn: Conn):
+    print("enter close")
+
     port_manager.close(conn.src_address[1])
     conn.socket.close()
     conn.socket = None

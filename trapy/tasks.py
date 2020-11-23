@@ -14,7 +14,7 @@ class RecvTask:
 
     def recv(self, conn):
         sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-        sock.settimeout(0.1)
+        sock.settimeout(0.01)
 
         while self.is_runing:
             try:
